@@ -1,0 +1,3 @@
+Many transitions with no (external) rdeps
+ - no tracker for these
+Transitions with no new binaries occur (i.e. binaries are just dropped)
