@@ -145,6 +145,18 @@ def transitions(src_test, src_new, stage):
         yield (source, new_bin, old_bin, stage)
 
 
+def find_existing_transitions(destdir):
+    transitions = {}
+    for stage in ("planned", "ongoing", "finished"):
+        stagedir = os.path.join(destdir, stage)
+        transitions[stage] = set()
+        for basename in os.listdir(stagedir):
+            if basename.endswith(".ben"):
+                transitions[stage].add(basename[:-4])
+
+    return transitions
+
+
 def as_ben_file(source, new_binaries, old_binaries):
     good = '|'.join(new_binaries)
     bad = '|'.join(old_binaries)
@@ -166,6 +178,7 @@ if __name__ == "__main__":
     mirror_test = PackageMirrorDist(sys.argv[1])
     mirror_sid = PackageMirrorDist(sys.argv[2])
     mirror_exp = PackageMirrorDist(sys.argv[3])
+    destdir = sys.argv[4]
 
     src_test = read_sources(mirror_test)
     src_sid = read_sources(mirror_sid)
@@ -173,15 +186,15 @@ if __name__ == "__main__":
 
     bin_test = read_binaries(mirror_test)
 
-    destdir = None
-    if len(sys.argv) >= 5:
-        destdir = sys.argv[4]
 
     possible_transitions = list(transitions(src_test, src_sid, 'ongoing'))
     possible_transitions.extend(transitions(src_test, src_exp, 'planned'))
     possible_transitions.extend(find_nearly_finished_transitions(
             src_test, bin_test, 'finished'))
 
+    existing_tranistions = find_existing_transitions(destdir)
+    possible_transitions = [x for x in possible_transitions
+                            if x[0] not in existing_tranistions[x[3]] ]
 
     if not possible_transitions:
         exit(0)
