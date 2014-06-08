@@ -1,49 +1,18 @@
 #!/usr/bin/python
 
 import apt_pkg
+import copy
 import itertools
 import os
 import sys
 
-class BasePackage(object):
-    def __init__(self, **kwargs):
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
+from debian.rt.package import (SourcePackage, BinaryPackage)
+from debian.rt.mirror import PackageMirrorDist
 
 
-class SourcePackage(BasePackage):
-    pass
-
-
-class BinaryPackage(BasePackage):
-    pass
-
-
-class PackageMirrorDist(object):
-    def __init__(self, mirror_dist_path):
-        self.mirror_dist_path = mirror_dist_path
-
-        release_file = os.path.join(mirror_dist_path, "Release")
-        tag_file = apt_pkg.TagFile(release_file)
-        if not tag_file.step():
-            raise IOError("Empty Release file (no paragraphs): %s " % release_file)
-
-        self.components = tag_file.section['Components'].split()
-        self.architectures = tag_file.section['Architectures'].split()
-
-    @property
-    def packages_files(self):
-        for comp, arch in itertools.product(self.components, self.architectures):
-            yield os.path.join(self.mirror_dist_path, comp, "binary-%s" % arch, "Packages.gz")
-
-    @property
-    def sources_files(self):
-        for comp in self.components:
-            yield os.path.join(self.mirror_dist_path, comp, "source", "Sources.gz")
-
-
-def read_sources(mirror_dist, intern=intern):
-    sources = {}
+def read_sources(mirror_dist, sources=None, intern=intern):
+    if sources is None:
+        sources = {}
 
     for filename in mirror_dist.sources_files:
         tag_file = apt_pkg.TagFile(filename)
@@ -73,8 +42,9 @@ def read_sources(mirror_dist, intern=intern):
     return sources
 
 
-def read_binaries(mirror_dist, intern=intern):
-    packages = {}
+def read_binaries(mirror_dist, packages=None, intern=intern):
+    if packages is None:
+        packages = {}
 
     for filename in mirror_dist.packages_files:
         tag_file = apt_pkg.TagFile(filename)
@@ -122,6 +92,10 @@ def read_binaries(mirror_dist, intern=intern):
             packages[pkg] = bin_pkg
 
 
+    return packages
+
+
+def compute_reverse_dependencies(packages):
     for pkg_name in packages:
         pkg = packages[pkg_name]
         for ordep in pkg.depends:
@@ -131,28 +105,22 @@ def read_binaries(mirror_dist, intern=intern):
                     continue
                 packages[dep_pkg].reverse_depends.add(pkg)
 
-    return packages
 
-
-def compute_reverse_dependencies(packages):
-    for pkg in packages:
-        pass
-
-
-def transitions(src_test, src_sid):
+def transitions(src_test, src_new, stage):
     for source in sorted(src_test):
-        if source not in src_sid:
+        if source not in src_new:
             continue
         test_bin = src_test[source]
-        sid_bin = src_sid[source]
+        new_suite_bin = src_new[source]
 
-        if test_bin.binaries <= sid_bin.binaries:
+        if test_bin.binaries <= new_suite_bin.binaries:
             continue
 
-        new_bin = sorted(x for x in sid_bin.binaries - test_bin.binaries)
-        old_bin = sorted(x for x in test_bin.binaries - sid_bin.binaries)
+        new_bin = sorted(x for x in new_suite_bin.binaries - test_bin.binaries)
+        old_bin = sorted(x for x in test_bin.binaries - new_suite_bin.binaries)
 
-        yield (source, new_bin, old_bin)
+        yield (source, new_bin, old_bin, stage)
+
 
 def as_ben_file(source, new_binaries, old_binaries):
     good = '|'.join(new_binaries)
@@ -167,42 +135,48 @@ notes = "This tracker was setup by a very simple automated tool.  The tool may n
 """.format(source=source, good=good, bad=bad, affected=affected)
 
 
-def _crap(source, new_binaries, old_binaries):
-    print source
-    for b in new_binaries:
-        print " + %s" % b
-#            print " + %s (%s)" % (b.package, b.section)
-    for b in old_binaries:
-        print " - %s" % b
-#            print " - %s (%s)" % (b.package, b.section)
-
-
 if __name__ == "__main__":
     apt_pkg.init()
 
+    seen = set()
+
     mirror_test = PackageMirrorDist(sys.argv[1])
     mirror_sid = PackageMirrorDist(sys.argv[2])
+    mirror_exp = PackageMirrorDist(sys.argv[3])
 
     src_test = read_sources(mirror_test)
     src_sid = read_sources(mirror_sid)
+    src_exp = read_sources(mirror_exp, src_sid.copy())
 
     destdir = None
-    if len(sys.argv) >= 4:
-        destdir = sys.argv[3]
+    if len(sys.argv) >= 5:
+        destdir = sys.argv[4]
 
-    possible_transitions = list(transitions(src_test, src_sid))
+    possible_transitions = list(transitions(src_test, src_sid, 'ongoing'))
+    possible_transitions.extend(transitions(src_test, src_exp, 'planned'))
 
     if not possible_transitions:
         exit(0)
 
-#    bin_test = read_binaries(mirror_test)
     bin_sid = read_binaries(mirror_sid)
+    bin_exp = read_binaries(mirror_exp, copy.deepcopy(bin_sid))
 
-    for source, new_binaries, old_binaries in possible_transitions:
-        output = as_ben_file(source, new_binaries, old_binaries)
+    compute_reverse_dependencies(bin_sid)
+    compute_reverse_dependencies(bin_exp)
+    transition_data = {}
+
+    for source, new_binaries, old_binaries, stage in possible_transitions:
         has_rdeps = False
+
         if not new_binaries:
             continue
+
+        if source in seen:
+            # If there is a planned and an ongoing, focus on the
+            # ongoing transition.  NB: We rely here on the order of
+            # possible_transition
+            continue
+        seen.add(source)
 
         for binary in old_binaries:
             if binary in bin_sid:
@@ -217,9 +191,9 @@ if __name__ == "__main__":
             continue
 
         if destdir:
+            output = as_ben_file(source, new_binaries, old_binaries)
             filename = "auto-%s.ben" % source
-            path = os.path.join(destdir, filename)
+            path = os.path.join(destdir, stage, filename)
             with open(path, "w") as fd:
                 fd.write(output)
-        else:
-            sys.stdout.write(output)
+
