@@ -128,7 +128,7 @@ def as_ben_file(source, new_binaries, old_binaries):
     affected = '|'.join((good, bad))
     return """
 title = "{source} (auto)";
-is_affected = .depends ~ /{affected}/;
+is_affected = (.depends ~ /{affected}/) & !(.source ~ "{source}");
 is_good = .depends ~ /{good}/;
 is_bad = .depends ~ /{bad}/;
 notes = "This tracker was setup by a very simple automated tool.  The tool may not be very smart...";
