@@ -82,6 +82,7 @@ def read_binaries(mirror_dist, packages=None, intern=intern):
             bin_pkg = BinaryPackage(
                 package=pkg,
                 version=version,
+                architecture=get_field('Architecture'),
                 source=source,
                 source_version=source_version,
                 section=section,
@@ -104,6 +105,28 @@ def compute_reverse_dependencies(packages):
                 if dep_pkg not in packages:
                     continue
                 packages[dep_pkg].reverse_depends.add(pkg)
+
+
+def find_nearly_finished_transitions(src_test, bin_test, stage):
+    src2bin = {}
+    for bin_pkg in bin_test.itervalues():
+        if bin_pkg.architecture == 'all':
+            continue
+        source_pkg = src_test.get(bin_pkg.source, None)
+        if source_pkg is None:
+            src2bin.setdefault(bin_pkg.source, set())
+            src2bin[bin_pkg.source].add(bin_pkg.package)
+            continue
+        if apt_pkg.version_compare(source_pkg.version, bin_pkg.source_version) > 0:
+            src2bin.setdefault(bin_pkg.source, set())
+            src2bin[bin_pkg.source].add(bin_pkg.package)
+
+    for source in sorted(src2bin):
+        source_pkg = src_test[source]
+        new_bin = sorted(x for x in source_pkg.binaries - src2bin[source])
+        old_bin = sorted(x for x in src2bin[source] - source_pkg.binaries)
+
+        yield (source, new_bin, old_bin, stage)
 
 
 def transitions(src_test, src_new, stage):
@@ -148,12 +171,17 @@ if __name__ == "__main__":
     src_sid = read_sources(mirror_sid)
     src_exp = read_sources(mirror_exp, src_sid.copy())
 
+    bin_test = read_binaries(mirror_test)
+
     destdir = None
     if len(sys.argv) >= 5:
         destdir = sys.argv[4]
 
     possible_transitions = list(transitions(src_test, src_sid, 'ongoing'))
     possible_transitions.extend(transitions(src_test, src_exp, 'planned'))
+    possible_transitions.extend(find_nearly_finished_transitions(
+            src_test, bin_test, 'finished'))
+
 
     if not possible_transitions:
         exit(0)
@@ -161,6 +189,7 @@ if __name__ == "__main__":
     bin_sid = read_binaries(mirror_sid)
     bin_exp = read_binaries(mirror_exp, copy.deepcopy(bin_sid))
 
+    compute_reverse_dependencies(bin_test)
     compute_reverse_dependencies(bin_sid)
     compute_reverse_dependencies(bin_exp)
     transition_data = {}
@@ -168,7 +197,23 @@ if __name__ == "__main__":
     for source, new_binaries, old_binaries, stage in possible_transitions:
         has_rdeps = False
 
-        if not new_binaries:
+        if not new_binaries and stage != 'finished':
+            continue
+
+        bin_suite = bin_sid
+        if stage == 'finished':
+            bin_suite = bin_test
+
+        for binary in old_binaries:
+            if binary in bin_suite:
+                for rdep in bin_suite[binary].reverse_depends:
+                    if rdep.source != source:
+                        has_rdeps = True
+                        break
+                if has_rdeps:
+                    break
+
+        if not has_rdeps:
             continue
 
         if source in seen:
@@ -178,17 +223,6 @@ if __name__ == "__main__":
             continue
         seen.add(source)
 
-        for binary in old_binaries:
-            if binary in bin_sid:
-                for rdep in bin_sid[binary].reverse_depends:
-                    if rdep.source != source:
-                        has_rdeps = True
-                        break
-                if has_rdeps:
-                    break
-
-        if not has_rdeps:
-            continue
 
         if destdir:
             output = as_ben_file(source, new_binaries, old_binaries)
