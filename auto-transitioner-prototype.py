@@ -122,14 +122,15 @@ def find_nearly_finished_transitions(src_test, bin_test, stage):
             src2bin[bin_pkg.source].add(bin_pkg.package)
 
     for source in sorted(src2bin):
+        extra_info = {}
         source_pkg = src_test[source]
         new_bin = sorted(x for x in source_pkg.binaries - src2bin[source])
         old_bin = sorted(x for x in src2bin[source] - source_pkg.binaries)
 
-        yield (source, new_bin, old_bin, stage)
+        yield (source, new_bin, old_bin, stage, extra_info)
 
 
-def transitions(src_test, src_new, stage):
+def transitions(src_test, bin_test, src_new, stage):
     for source in sorted(src_test):
         if source not in src_new:
             continue
@@ -141,8 +142,22 @@ def transitions(src_test, src_new, stage):
 
         new_bin = sorted(x for x in new_suite_bin.binaries - test_bin.binaries)
         old_bin = sorted(x for x in test_bin.binaries - new_suite_bin.binaries)
+        extra_info = {}
+        extra_info['can-smooth-update'] = 'maybe'
+        total_rdeps = set()
 
-        yield (source, new_bin, old_bin, stage)
+        for old_pkg in old_bin:
+            if old_pkg not in bin_test:
+                # happens with udebs
+                continue
+            old_pkg_data = bin_test[old_pkg]
+            if old_pkg_data.section not in ('libs', 'oldlibs'):
+                if old_pkg_data.reverse_depends:
+                    extra_info['can-smooth-update'] = 'no - %s is not in libs or oldlibs' % old_pkg
+                elif extra_info['can-smooth-update'] == 'maybe':
+                    extra_info['can-smooth-update'] = 'maybe (ignoring rdep-less binaries)'
+
+        yield (source, new_bin, old_bin, stage, extra_info)
 
 
 def find_existing_transitions(destdir):
@@ -157,17 +172,21 @@ def find_existing_transitions(destdir):
     return transitions
 
 
-def as_ben_file(source, new_binaries, old_binaries):
+def as_ben_file(source, new_binaries, old_binaries, extra_info):
     good = '|'.join(new_binaries)
     bad = '|'.join(old_binaries)
     affected = '|'.join((good, bad))
-    return """
+    extra_notes = ''
+    if extra_info:
+        extra_notes = '\n\nExtra information (collected entirely from testing!):\n'
+        extra_notes = extra_notes + "\n".join(" * %s: %s" % (key, str(extra_info[key])) for key in sorted(extra_info))
+    return """\
 title = "{source} (auto)";
 is_affected = .depends ~ /{affected}/;
 is_good = .depends ~ /{good}/;
 is_bad = .depends ~ /{bad}/;
-notes = "This tracker was setup by a very simple automated tool.  The tool may not be very smart...";
-""".format(source=source, good=good, bad=bad, affected=affected)
+notes = "This tracker was setup by a very simple automated tool.  The tool may not be very smart...{extra_notes}";
+""".format(source=source, good=good, bad=bad, affected=affected, extra_notes=extra_notes)
 
 
 if __name__ == "__main__":
@@ -186,9 +205,10 @@ if __name__ == "__main__":
 
     bin_test = read_binaries(mirror_test)
 
+    compute_reverse_dependencies(bin_test)
 
-    possible_transitions = list(transitions(src_test, src_sid, 'ongoing'))
-    possible_transitions.extend(transitions(src_test, src_exp, 'planned'))
+    possible_transitions = list(transitions(src_test, bin_test, src_sid, 'ongoing'))
+    possible_transitions.extend(transitions(src_test, bin_test, src_exp, 'planned'))
     possible_transitions.extend(find_nearly_finished_transitions(
             src_test, bin_test, 'finished'))
 
@@ -202,12 +222,11 @@ if __name__ == "__main__":
     bin_sid = read_binaries(mirror_sid)
     bin_exp = read_binaries(mirror_exp, copy.deepcopy(bin_sid))
 
-    compute_reverse_dependencies(bin_test)
     compute_reverse_dependencies(bin_sid)
     compute_reverse_dependencies(bin_exp)
     transition_data = {}
 
-    for source, new_binaries, old_binaries, stage in possible_transitions:
+    for source, new_binaries, old_binaries, stage, extra_info in possible_transitions:
         has_rdeps = False
 
         if not new_binaries and stage != 'finished':
@@ -238,7 +257,7 @@ if __name__ == "__main__":
 
 
         if destdir:
-            output = as_ben_file(source, new_binaries, old_binaries)
+            output = as_ben_file(source, new_binaries, old_binaries, extra_info)
             filename = "auto-%s.ben" % source
             path = os.path.join(destdir, stage, filename)
             with open(path, "w") as fd:
