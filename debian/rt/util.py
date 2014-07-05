@@ -1,3 +1,5 @@
+import apt_pkg
+
 from debian.rt.package import (SourcePackage, BinaryPackage)
 
 
