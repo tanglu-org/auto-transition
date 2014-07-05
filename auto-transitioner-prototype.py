@@ -117,7 +117,6 @@ if __name__ == "__main__":
     transition_data = {}
 
     for source, new_binaries, old_binaries, stage, extra_info in possible_transitions:
-        has_rdeps = False
 
         if not new_binaries and stage != 'finished':
             continue
@@ -126,17 +125,22 @@ if __name__ == "__main__":
         if stage == 'finished':
             bin_suite = bin_test
 
-        for binary in old_binaries:
-            if binary in bin_suite:
-                for rdep in bin_suite[binary].reverse_depends:
-                    if rdep.source != source:
-                        has_rdeps = True
-                        break
-                if has_rdeps:
+        if old_binaries and new_binaries:
+            old_has_rdeps = False
+            new_has_rdeps = False
+            for binary in old_binaries:
+                if binary_has_external_rdeps(source, binary, bin_suite):
+                    old_has_rdeps = True
                     break
 
-        if not has_rdeps:
-            continue
+            if not old_has_rdeps:
+                for binary in new_binaries:
+                    if binary_has_external_rdeps(source, binary, bin_suite):
+                        new_has_rdeps = True
+                        break
+            if not old_has_rdeps and not new_has_rdeps:
+                # No rdeps seem affected, skip...
+                continue
 
         if source in seen:
             # If there is a planned and an ongoing, focus on the
