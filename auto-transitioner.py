@@ -34,24 +34,30 @@ def find_nearly_finished_transitions(src_test, bin_test, stage):
         new_bin = sorted(x for x in source_pkg.binaries - src2bin[source])
         old_bin = sorted(x for x in src2bin[source] - source_pkg.binaries)
 
-        yield (source, new_bin, old_bin, stage, extra_info)
+        yield (source, source, new_bin, old_bin, stage, extra_info)
 
 
 def transitions(src_test, bin_test, src_new, stage):
     for source in sorted(src_test):
-        if source not in src_new:
-            continue
-        test_bin = src_test[source]
-        new_suite_bin = src_new[source]
+        transition_name = source
+        test_bin = src_test[source].binaries
+        if source in src_new:
+            new_suite_bin = src_new[source].binaries
+        else:
+            transition_name = source + "-rm"
+            new_suite_bin = set()
+            if not any(y for x in test_bin
+                         for y in bin_test[x].reverse_depends
+                             if y.package not in test_bin):
+                continue
 
-        if test_bin.binaries <= new_suite_bin.binaries:
+        if test_bin <= new_suite_bin:
             continue
 
-        new_bin = sorted(x for x in new_suite_bin.binaries - test_bin.binaries)
-        old_bin = sorted(x for x in test_bin.binaries - new_suite_bin.binaries)
+        new_bin = sorted(x for x in new_suite_bin - test_bin)
+        old_bin = sorted(x for x in test_bin - new_suite_bin)
         extra_info = {}
         extra_info['can-smooth-update'] = 'maybe'
-        total_rdeps = set()
 
         for old_pkg in old_bin:
             if old_pkg not in bin_test:
@@ -64,7 +70,7 @@ def transitions(src_test, bin_test, src_new, stage):
                 elif extra_info['can-smooth-update'] == 'maybe':
                     extra_info['can-smooth-update'] = 'maybe (ignoring rdep-less binaries)'
 
-        yield (source, new_bin, old_bin, stage, extra_info)
+        yield (transition_name, source, new_bin, old_bin, stage, extra_info)
 
 
 def find_existing_transitions(destdir):
@@ -75,6 +81,8 @@ def find_existing_transitions(destdir):
         for basename in os.listdir(stagedir):
             if basename.endswith(".ben"):
                 transitions[stage].add(basename[:-4])
+                if basename.endswith("-rm.ben"):
+                    transitions[stage].add(basename[:-7])
 
     return transitions
 
@@ -104,7 +112,7 @@ if __name__ == "__main__":
 
     existing_tranistions = find_existing_transitions(destdir)
     possible_transitions = [x for x in possible_transitions
-                            if x[0] not in existing_tranistions[x[3]] ]
+                            if x[0] not in existing_tranistions[x[4]] ]
 
     if not possible_transitions:
         exit(0)
@@ -116,9 +124,9 @@ if __name__ == "__main__":
     compute_reverse_dependencies(bin_exp)
     transition_data = {}
 
-    for source, new_binaries, old_binaries, stage, extra_info in possible_transitions:
+    for transition_name, source, new_binaries, old_binaries, stage, extra_info in possible_transitions:
 
-        if not new_binaries and stage != 'finished':
+        if not new_binaries and stage != 'finished' and transition_name == source:
             continue
 
         bin_suite = bin_sid
@@ -142,17 +150,17 @@ if __name__ == "__main__":
                 # No rdeps seem affected, skip...
                 continue
 
-        if source in seen:
+        if transition_name in seen:
             # If there is a planned and an ongoing, focus on the
             # ongoing transition.  NB: We rely here on the order of
             # possible_transition
             continue
-        seen.add(source)
+        seen.add(transition_name)
 
 
         if destdir:
-            output = as_ben_file(source, new_binaries, old_binaries, extra_info)
-            filename = "auto-%s.ben" % source
+            output = as_ben_file(transition_name, new_binaries, old_binaries, extra_info)
+            filename = "auto-%s.ben" % transition_name
             path = os.path.join(destdir, stage, filename)
             with open(path, "w") as fd:
                 fd.write(output)

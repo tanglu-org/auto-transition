@@ -11,21 +11,26 @@ def binary_has_external_rdeps(source, binary, bin_suite):
     return False
 
 
-def as_ben_file(source, new_binaries, old_binaries, extra_info):
+def as_ben_file(transition_name, new_binaries, old_binaries, extra_info):
     good = '|'.join(new_binaries)
     bad = '|'.join(old_binaries)
-    affected = '|'.join((good, bad))
     extra_notes = ''
+    if good:
+        affected = '|'.join((good, bad))
+        good = ".depends ~ /%s/" % good
+    else:
+        good = "false"
+        affected = bad
     if extra_info:
         extra_notes = '\n\nExtra information (collected entirely from testing!):\n'
         extra_notes = extra_notes + "\n".join(" * %s: %s" % (key, str(extra_info[key])) for key in sorted(extra_info))
     return """\
-title = "{source} (auto)";
+title = "{transition_name} (auto)";
 is_affected = .depends ~ /{affected}/;
-is_good = .depends ~ /{good}/;
+is_good = {good};
 is_bad = .depends ~ /{bad}/;
 notes = "This tracker was setup by a very simple automated tool.  The tool may not be very smart...{extra_notes}";
-""".format(source=source, good=good, bad=bad, affected=affected, extra_notes=extra_notes)
+""".format(transition_name=transition_name, good=good, bad=bad, affected=affected, extra_notes=extra_notes)
 
 
 def read_sources(mirror_dist, sources=None, intern=intern):
