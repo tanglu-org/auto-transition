@@ -1,4 +1,5 @@
 import apt_pkg
+import re
 
 from debian.rt.package import (SourcePackage, BinaryPackage)
 
@@ -12,8 +13,8 @@ def binary_has_external_rdeps(source, binary, bin_suite):
 
 
 def as_ben_file(transition_name, new_binaries, old_binaries, extra_info):
-    good = '|'.join(new_binaries)
-    bad = '|'.join(old_binaries)
+    good = '|'.join(re.escape(x) for x in new_binaries)
+    bad = '|'.join(re.escape(x) for x in old_binaries)
     extra_notes = ''
     if good:
         affected = '|'.join((good, bad))
