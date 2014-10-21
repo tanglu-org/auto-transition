@@ -46,9 +46,9 @@ def transitions(src_test, bin_test, src_new, stage):
         else:
             transition_name = source + "-rm"
             new_suite_bin = set()
-            if not any(y for x in test_bin
+            if not any(y for x in test_bin if x in bin_test
                          for y in bin_test[x].reverse_depends
-                             if x in bin_test and y.package not in test_bin):
+                             if y.package not in test_bin):
                 continue
 
         if test_bin <= new_suite_bin:
