@@ -65,10 +65,10 @@ def transitions(src_test, bin_test, src_new, stage):
                 continue
             old_pkg_data = bin_test[old_pkg]
             if old_pkg_data.section not in ('libs', 'oldlibs'):
-                if old_pkg_data.reverse_depends:
+                if old_pkg_data.reverse_depends - test_bin:
                     extra_info['can-smooth-update'] = 'no - %s is not in libs or oldlibs' % old_pkg
                 elif extra_info['can-smooth-update'] == 'maybe':
-                    extra_info['can-smooth-update'] = 'maybe (ignoring rdep-less binaries)'
+                    extra_info['can-smooth-update'] = 'maybe (ignoring rdep-less binaries or/and intra-source-rdeps)'
 
         yield (transition_name, source, new_bin, old_bin, stage, extra_info)
 
