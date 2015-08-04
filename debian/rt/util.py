@@ -18,7 +18,7 @@ def as_ben_file(transition_name, new_binaries, old_binaries, extra_info):
     extra_notes = ''
     if good:
         affected = '|'.join((good, bad))
-        good = ".depends ~ /%s/" % good
+        good = ".depends ~ /\\b(%s)\\b/" % good
     else:
         good = "false"
         affected = bad
@@ -27,9 +27,9 @@ def as_ben_file(transition_name, new_binaries, old_binaries, extra_info):
         extra_notes = extra_notes + "\n".join(" * %s: %s" % (key, str(extra_info[key])) for key in sorted(extra_info))
     return """\
 title = "{transition_name} (auto)";
-is_affected = .depends ~ /{affected}/;
+is_affected = .depends ~ /\\b({affected})\\b/;
 is_good = {good};
-is_bad = .depends ~ /{bad}/;
+is_bad = .depends ~ /\\b({bad})\\b/;
 notes = "This tracker was setup by a very simple automated tool.  The tool may not be very smart...{extra_notes}";
 """.format(transition_name=transition_name, good=good, bad=bad, affected=affected, extra_notes=extra_notes)
 
