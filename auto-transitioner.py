@@ -75,7 +75,7 @@ def transitions(src_test, bin_test, src_new, stage):
 
 def find_existing_transitions(destdir):
     transitions = {}
-    for stage in ("planned", "ongoing", "finished"):
+    for stage in ("ongoing", "finished"):
         stagedir = os.path.join(destdir, stage)
         transitions[stage] = set()
         for basename in os.listdir(stagedir):
@@ -94,19 +94,16 @@ if __name__ == "__main__":
 
     mirror_test = PackageMirrorDist(sys.argv[1])
     mirror_sid = PackageMirrorDist(sys.argv[2])
-    mirror_exp = PackageMirrorDist(sys.argv[3])
-    destdir = sys.argv[4]
+    destdir = sys.argv[3]
 
     src_test = read_sources(mirror_test)
     src_sid = read_sources(mirror_sid)
-    src_exp = read_sources(mirror_exp, src_sid.copy())
 
     bin_test = read_binaries(mirror_test)
 
     compute_reverse_dependencies(bin_test)
 
     possible_transitions = list(transitions(src_test, bin_test, src_sid, 'ongoing'))
-    possible_transitions.extend(transitions(src_test, bin_test, src_exp, 'planned'))
     possible_transitions.extend(find_nearly_finished_transitions(
             src_test, bin_test, 'finished'))
 
@@ -118,10 +115,8 @@ if __name__ == "__main__":
         exit(0)
 
     bin_sid = read_binaries(mirror_sid)
-    bin_exp = read_binaries(mirror_exp, copy.deepcopy(bin_sid))
 
     compute_reverse_dependencies(bin_sid)
-    compute_reverse_dependencies(bin_exp)
     transition_data = {}
 
     for transition_name, source, new_binaries, old_binaries, stage, extra_info in possible_transitions:
