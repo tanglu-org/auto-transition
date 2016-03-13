@@ -97,7 +97,7 @@ if __name__ == "__main__":
     destdir = sys.argv[3]
 
     src_test = read_sources(mirror_test)
-    src_sid = read_sources(mirror_sid, src_test.copy())
+    src_sid = read_sources(mirror_sid)
 
     bin_test = read_binaries(mirror_test)
 
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     if not possible_transitions:
         exit(0)
 
-    bin_sid = read_binaries(mirror_sid, copy.deepcopy(bin_test))
+    bin_sid = read_binaries(mirror_sid)
 
     compute_reverse_dependencies(bin_sid)
     transition_data = {}
